@@ -1,8 +1,11 @@
 use std::collections::{HashMap, LinkedList};
+use std::fmt::Write;
 fn main() {
     println!("Starting game of pexeso!");
 
     let mut game = Game::new(GameSize::Tiny, 1);
+
+    game.reveal();
 
     loop {
         println!("Enter your move:");
@@ -15,8 +18,20 @@ fn main() {
         };
         let move_result = game.play(move_instruction);
         match move_result {
-            MoveResult::Match => println!("Match!"),
-            MoveResult::NoMatch => println!("No match!"),
+            MoveResult::Match {
+                first_item,
+                second_item,
+            } => {
+                println!("Match!");
+                println!("{}", game);
+            }
+            MoveResult::NoMatch {
+                first_item,
+                second_item,
+            } => {
+                println!("No match!");
+                println!("{}", game);
+            }
             MoveResult::InvalidMove => println!("Invalid move!"),
             MoveResult::InvalidPlayer => println!("Invalid player!"),
             MoveResult::InvalidMoveGameOver => {
@@ -48,7 +63,43 @@ struct Game {
     player_count: u32,
     history: LinkedList<(MoveInstruction, MoveResult)>,
     next_player: u32,
-    matches: HashMap<Position, Position>,
+    board: Vec<Vec<Picture>>,
+}
+
+impl std::fmt::Display for Game {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for i in 0..self.board.len() {
+            for j in 0..self.board[i].len() {
+                let display_value = {
+                    if self.history.iter().any(|(mv_instr, mv_res)| {
+                        if mv_instr.first_item != (i as u32, j as u32)
+                            && mv_instr.second_item != (i as u32, j as u32)
+                        {
+                            return false;
+                        }
+
+                        if let MoveResult::Match {
+                            first_item: _,
+                            second_item: _,
+                        } = mv_res
+                        {
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }) {
+                        let item = &self.board[i][j];
+                        emojis::get_by_shortcode(&item.id).unwrap().as_str()
+                    } else {
+                        "🔵"
+                    }
+                };
+                fmt.write_str(display_value).unwrap();
+            }
+            fmt.write_str("\n").unwrap();
+        }
+        Ok(())
+    }
 }
 
 impl Game {
@@ -62,8 +113,17 @@ impl Game {
             player_count,
             history: LinkedList::new(),
             next_player: 0,
-            matches: generate_matches(size),
+            board: generate_board(size),
         }
+    }
+
+    fn reveal(&self) {
+        self.board.iter().for_each(|row| {
+            row.iter().for_each(|item| {
+                print!("{}", emojis::get_by_shortcode(&item.id).unwrap().as_str())
+            });
+            print!("\n")
+        })
     }
 
     fn play(&mut self, move_instruction: MoveInstruction) -> MoveResult {
@@ -79,13 +139,30 @@ impl Game {
         }
 
         self.next_player = (self.next_player + 1) % self.player_count;
-        if self.matches.get(&move_instruction.first_item).unwrap() == &move_instruction.second_item
-        {
-            self.history
-                .push_back((move_instruction, MoveResult::Match));
-            MoveResult::Match
+
+        let (f_x, f_y) = move_instruction.first_item;
+        let first_picture = &self.board[f_x as usize][f_y as usize];
+
+        let (s_x, s_y) = move_instruction.second_item;
+        let second_picture = &self.board[s_x as usize][s_y as usize];
+
+        if first_picture == second_picture {
+            self.history.push_back((
+                move_instruction,
+                MoveResult::Match {
+                    first_item: first_picture.clone(),
+                    second_item: second_picture.clone(),
+                },
+            ));
+            MoveResult::Match {
+                first_item: first_picture.clone(),
+                second_item: second_picture.clone(),
+            }
         } else {
-            MoveResult::NoMatch
+            MoveResult::NoMatch {
+                first_item: first_picture.clone(),
+                second_item: second_picture.clone(),
+            }
         }
     }
 
@@ -114,27 +191,37 @@ impl Game {
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
-fn generate_matches(size: GameSize) -> HashMap<Position, Position> {
+fn generate_board(size: GameSize) -> Vec<Vec<Picture>> {
     let (max_x, max_y) = size.into_tuple();
-    let mut rng = thread_rng();
-    let x_shuffled = {
-        let mut x: Vec<u32> = (0..max_x).collect();
-        x.shuffle(&mut rng);
-        x
-    };
-    let y_shuffled = {
-        let mut y: Vec<u32> = (0..max_y).collect();
-        y.shuffle(&mut rng);
-        y
-    };
+    let total_items = ((max_x * max_y) / 2) as usize;
+    assert!(
+        emojis::Group::FoodAndDrink
+            .emojis()
+            .collect::<Vec<_>>()
+            .len()
+            >= total_items
+    );
 
-    let mut matches = HashMap::new();
-    for i in 0..max_x {
-        for j in 0..max_y {
-            matches.insert((i, j), (x_shuffled[i as usize], y_shuffled[j as usize]));
+    let mut rng = thread_rng();
+    let mut em: Vec<_> = emojis::Group::FoodAndDrink.emojis().collect();
+    em.shuffle(&mut rng);
+
+    let mut items = em.into_iter().take(total_items).collect::<Vec<_>>();
+    let mut matches = items.clone();
+    items.append(&mut matches);
+    items.shuffle(&mut rng);
+
+    let mut board = Vec::new();
+    for _ in 0..max_x {
+        let mut row = Vec::new();
+        for _ in 0..max_y {
+            row.push(Picture {
+                id: items.pop().unwrap().shortcode().unwrap().to_string(),
+            })
         }
+        board.push(row);
     }
-    matches
+    board
 }
 
 type Position = (u32, u32);
@@ -145,9 +232,20 @@ struct MoveInstruction {
     second_item: Position,
 }
 
+#[derive(Clone, PartialEq)]
+struct Picture {
+    id: String,
+}
+
 enum MoveResult {
-    Match,
-    NoMatch,
+    Match {
+        first_item: Picture,
+        second_item: Picture,
+    },
+    NoMatch {
+        first_item: Picture,
+        second_item: Picture,
+    },
     InvalidMove,
     InvalidPlayer,
     InvalidMoveGameOver,
