@@ -1,5 +1,4 @@
-use std::collections::{HashMap, LinkedList};
-use std::fmt::Write;
+use std::collections::LinkedList;
 fn main() {
     println!("Starting game of pexeso!");
 
@@ -118,7 +117,18 @@ impl Game {
     }
 
     fn reveal(&self) {
-        self.board.iter().for_each(|row| {
+        print!("  ");
+        for i in 0..self.board.len() {
+            print!("{} ", i);
+        }
+        println!();
+        print!(" |");
+        for _ in 0..self.board.len() {
+            print!("--");
+        }
+        println!();
+        self.board.iter().enumerate().for_each(|(i, row)| {
+            print!("{}|", i);
             row.iter().for_each(|item| {
                 print!("{}", emojis::get_by_shortcode(&item.id).unwrap().as_str())
             });
