@@ -63,6 +63,7 @@ struct Game {
     history: LinkedList<(MoveInstruction, MoveResult)>,
     next_player: u32,
     board: Vec<Vec<Picture>>,
+    prev_play: Option<MoveInstruction>,
 }
 
 impl std::fmt::Display for Game {
@@ -141,6 +142,27 @@ impl Game {
         if self.history.len() as u32 == x * y {
             return MoveResult::InvalidMoveGameOver;
         }
+
+        if let Some(prev_play) = self.prev_play {
+            if let MoveInstruction::FirstMove {
+                player_id: first_move_player_id,
+                position: first_move_position,
+            } = prev_play
+            {
+                if let MoveInstruction::SecondMove {
+                    player_id: second_move_player_id,
+                    position: second_move_position,
+                } = move_instruction
+                {
+                    if first_move_player_id != second_move_player_id {
+                        return MoveResult::InvalidPlayer;
+                    }
+                } else {
+                    return MoveResult::InvalidPlayer;
+                }
+            }
+        }
+
         if move_instruction.player_id != self.next_player {
             return MoveResult::InvalidPlayer;
         }
@@ -236,15 +258,21 @@ fn generate_board(size: GameSize) -> Vec<Vec<Picture>> {
 
 type Position = (u32, u32);
 
-struct MoveInstruction {
-    player_id: u32,
-    first_item: Position,
-    second_item: Position,
+enum MoveInstruction {
+    FirstMove { player_id: u32, position: Position },
+    SecondMove { player_id: u32, position: Position },
 }
 
 #[derive(Clone, PartialEq)]
 struct Picture {
     id: String,
+    pos: Position,
+}
+
+impl Picture {
+    fn pairs_with(&self, item: &Picture) -> bool {
+        self.id == item.id
+    }
 }
 
 enum MoveResult {
@@ -256,8 +284,20 @@ enum MoveResult {
         first_item: Picture,
         second_item: Picture,
     },
-    InvalidMove,
-    InvalidPlayer,
+    AfterFirstMove {
+        first_item: Picture,
+    },
+    InvalidFirstMove {
+        first_position: Position,
+    },
+    InvalidSecondMove {
+        first_item: Picture,
+        second_posiition: Position,
+    },
+    InvalidPlayer {
+        played: u32,
+        expected: u32,
+    },
     InvalidMoveGameOver,
 }
 
